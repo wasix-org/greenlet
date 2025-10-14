@@ -30,7 +30,7 @@
 // ``slp_save_state_asm`()` to fetch the pointer to pass to the
 // macro.)
 //
-// Our compromise is to use a *glabal*, untracked, weak, pointer
+// Our compromise is to use a *global*, untracked, weak, pointer
 // to the necessary thread state during the process of switching only.
 // This is safe because we're protected by the GIL, and if we're
 // running this code, the thread isn't exiting. This also nets us a
