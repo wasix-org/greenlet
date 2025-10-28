@@ -195,6 +195,10 @@ static void GREENLET_NOINLINE(slp_restore_state_trampoline)()
 {
     switching_thread_state->slp_restore_state();
 }
+static void GREENLET_NOINLINE(slp_start_stack_trampoline)()
+{
+    ((UserGreenlet*)switching_thread_state)->slp_start_stack();
+}
 }
 
 

@@ -131,13 +131,32 @@ inline int StackState::copy_stack_to_heap_up_to(const char* const stop) noexcept
     return 0;
 }
 
+// this: the stack we are switching to
+// current: the stack we are switching from
 inline int StackState::copy_stack_to_heap(char* const stackref,
                                           const StackState& current) noexcept
 {
+    StackState* owner = const_cast<StackState*>(&current);
+
+    // print the stackstate
+    // printf("BEFORE switching to %p\n", this);
+    // printf("  stack_start: %p\n", this->_stack_start);
+    // printf("  stack_stop: %p\n", this->stack_stop);
+    // printf("  stack_copy: %p\n", this->stack_copy);
+    // printf("  stack_saved: %ld\n", this->_stack_saved);
+    // printf("  stack_prev: %p\n", this->stack_prev); 
+
+    // printf("BEFORE switching from %p\n", owner);
+    // printf("  stack_start: %p\n", owner->_stack_start);
+    // printf("  stack_stop: %p\n", owner->stack_stop);
+    // printf("  stack_copy: %p\n", owner->stack_copy);
+    // printf("  stack_saved: %ld\n", owner->_stack_saved);
+    // printf("  stack_prev: %p\n", owner->stack_prev); 
+
+
     /* must free all the C stack up to target_stop */
     const char* const target_stop = this->stack_stop;
 
-    StackState* owner = const_cast<StackState*>(&current);
     assert(owner->_stack_saved == 0); // everything is present on the stack
     if (!owner->_stack_start) {
         owner = owner->stack_prev; /* not saved if dying */
@@ -158,6 +177,19 @@ inline int StackState::copy_stack_to_heap(char* const stackref,
             return -1; /* XXX */
         }
     }
+    // printf("AFTER switching to %p\n", this);
+    // printf("  stack_start: %p\n", this->_stack_start);
+    // printf("  stack_stop: %p\n", this->stack_stop);
+    // printf("  stack_copy: %p\n", this->stack_copy);
+    // printf("  stack_saved: %ld\n", this->_stack_saved);
+    // printf("  stack_prev: %p\n", this->stack_prev); 
+
+    // printf("AFTER switching from %p\n", owner);
+    // printf("  stack_start: %p\n", owner->_stack_start);
+    // printf("  stack_stop: %p\n", owner->stack_stop);
+    // printf("  stack_copy: %p\n", owner->stack_copy);
+    // printf("  stack_saved: %ld\n", owner->_stack_saved);
+    // printf("  stack_prev: %p\n", owner->stack_prev); 
     return 0;
 }
 

@@ -70,6 +70,8 @@ extern "C" {
 # include "platform/switch_loongarch64_linux.h" /* LoongArch64 */
 #elif defined(__GNUC__) && defined(__sh__)
 # include "platform/switch_sh_gcc.h" /* SuperH */
+#elif defined(__GNUC__) && defined(__wasi__)
+# include "platform/switch_wasm32_wasix.h" /* gcc on X86 */
 #endif
 
 #ifdef __cplusplus

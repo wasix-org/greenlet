@@ -41,6 +41,7 @@ MainGreenlet::MainGreenlet(PyGreenlet* p, ThreadState* state)
       _self(p),
       _thread_state(state)
 {
+    this->_stack_id = 0; // Main continuation uses stack id 0
     G_TOTAL_MAIN_GREENLETS++;
 }
 

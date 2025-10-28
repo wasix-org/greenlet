@@ -160,7 +160,7 @@ UserGreenlet::g_switch()
             assert(!target->main());
             UserGreenlet* real_target = static_cast<UserGreenlet*>(target);
             assert(real_target);
-            void* dummymarker;
+            void* dummymarker; // This is the stack end marker
             was_initial_stub = true;
             if (!target_was_me) {
                 target->args() <<= this->args();
@@ -232,7 +232,9 @@ UserGreenlet::g_initialstub(void* mark)
           self.run is the object to call in the new greenlet.
           This could run arbitrary python code and switch greenlets!
         */
-        run = this->self().PyRequireAttr(mod_globs->str_run);
+       run = this->self().PyRequireAttr(mod_globs->str_run);
+       // Only valid until this function returns.
+       this->__run = &run;
         /* restore saved exception */
         saved.PyErrRestore();
 
@@ -285,7 +287,7 @@ UserGreenlet::g_initialstub(void* mark)
 
     /* perform the initial switch */
     switchstack_result_t err = this->g_switchstack();
-    /* returns twice!
+    /* returns not twice!
        The 1st time with ``err == 1``: we are in the new greenlet.
        This one owns a greenlet that used to be current.
        The 2nd time with ``err <= 0``: back in the caller's
@@ -296,14 +298,67 @@ UserGreenlet::g_initialstub(void* mark)
        constructed for the second time until the switch actually happens.
     */
     if (err.status == 1) {
-        // In the new greenlet.
+        // Previously this called bootstrap which called the run function which never returned.
+        // Now err should be one, because it calls slp_start_stack directly (which in turn calls inner_bootstrap which calls run)
+        fprintf(stderr,
+                    "intial switch returned -1. This should have been replaced by the start_stack trampoline\n");
+        Py_FatalError("greenlet: inner_bootstrap returned with no exception.\n");
+        throw std::string("Fuck you, thats why!");
+    }
+
+
+    // In contrast, notice that we're keeping the origin greenlet
+    // around as an owned reference; we need it to call the trace
+    // function for the switch back into the parent. It was only
+    // captured at the time the switch actually happened, though,
+    // so we haven't been keeping an extra reference around this
+    // whole time.
+
+    /* back in the parent */
+    if (err.status < 0) {
+        /* start failed badly, restore greenlet state */
+        this->stack_state = StackState();
+        this->_main_greenlet.CLEAR();
+        // CAUTION: This may run arbitrary Python code.
+        run.CLEAR(); // inner_bootstrap didn't run, we own the reference.
+    }
+
+    // In the success case, the spawned code (inner_bootstrap) will
+    // take care of decrefing this, so we relinquish ownership so as
+    // to not double-decref.
+
+    run.relinquish_ownership();
+
+    return err;
+}
+
+inline void UserGreenlet::slp_start_stack() noexcept {
+    // this = switching_thread_state = new_stack;
+    // 
+    // In the new greenlet.
+
+    // From g_switchstack():
+
+    Greenlet* greenlet_that_switched_in = switching_thread_state; // aka this
+    switching_thread_state = nullptr;
+    // except that no stack variables are valid, we would:
+    // assert(this == greenlet_that_switched_in);
+
+    // switchstack success is where we restore the exception state,
+    // etc. It returns the origin greenlet because its convenient.
+
+    OwnedGreenlet origin = greenlet_that_switched_in->g_switchstack_success();
+    assert(greenlet_that_switched_in->args() || PyErr_Occurred());
+    // return switchstack_result_t(err, greenlet_that_switched_in, origin);
+
+    // From g_initialstub();
+
 
         // This never returns! Calling inner_bootstrap steals
         // the contents of our run object within this stack frame, so
         // it is not valid to do anything with it.
         try {
-            this->inner_bootstrap(err.origin_greenlet.relinquish_ownership(),
-                                  run.relinquish_ownership());
+            this->inner_bootstrap((this->__run)->relinquish_ownership());
         }
         // Getting a C++ exception here isn't good. It's probably a
         // bug in the underlying greenlet, meaning it's probably a
@@ -346,37 +401,13 @@ UserGreenlet::g_initialstub(void* mark)
             throw;
         }
         Py_FatalError("greenlet: inner_bootstrap returned with no exception.\n");
-    }
-
-
-    // In contrast, notice that we're keeping the origin greenlet
-    // around as an owned reference; we need it to call the trace
-    // function for the switch back into the parent. It was only
-    // captured at the time the switch actually happened, though,
-    // so we haven't been keeping an extra reference around this
-    // whole time.
-
-    /* back in the parent */
-    if (err.status < 0) {
-        /* start failed badly, restore greenlet state */
-        this->stack_state = StackState();
-        this->_main_greenlet.CLEAR();
-        // CAUTION: This may run arbitrary Python code.
-        run.CLEAR(); // inner_bootstrap didn't run, we own the reference.
-    }
-
-    // In the success case, the spawned code (inner_bootstrap) will
-    // take care of decrefing this, so we relinquish ownership so as
-    // to not double-decref.
-
-    run.relinquish_ownership();
-
-    return err;
 }
 
 
+
+// TODO: Reenable origin_greenlet for tracing.
 void
-UserGreenlet::inner_bootstrap(PyGreenlet* origin_greenlet, PyObject* run)
+UserGreenlet::inner_bootstrap(/*PyGreenlet* origin_greenlet,*/ PyObject* run)
 {
     // The arguments here would be another great place for move.
     // As it is, we take them as a reference so that when we clear
@@ -402,6 +433,10 @@ UserGreenlet::inner_bootstrap(PyGreenlet* origin_greenlet, PyObject* run)
     // EXCEPT: That can't be true, we access run, among others, here.
 
     this->stack_state.set_active(); /* running */
+    // NOTE: Do NOT call set_active() here! User greenlets should have their
+    // _stack_start set to the real stack pointer during the switch, not to
+    // the sentinel value (char*)1 which is only for main greenlets.
+    // this->stack_state.set_active(); /* running */
 
     // We're about to possibly run Python code again, which
     // could switch back/away to/from us, so we need to grab the
@@ -420,27 +455,29 @@ UserGreenlet::inner_bootstrap(PyGreenlet* origin_greenlet, PyObject* run)
     // The first switch we need to manually call the trace
     // function here instead of in g_switch_finish, because we
     // never return there.
-    if (OwnedObject tracefunc = this->thread_state()->get_tracefunc()) {
-        OwnedGreenlet trace_origin;
-        trace_origin = origin_greenlet;
-        try {
-            g_calltrace(tracefunc,
-                        args ? mod_globs->event_switch : mod_globs->event_throw,
-                        trace_origin,
-                        this->_self);
-        }
-        catch (const PyErrOccurred&) {
-            /* Turn trace errors into switch throws */
-            args.CLEAR();
-        }
-    }
+    // TODO: This is easier to implement without tracing for now
+    // if (OwnedObject tracefunc = this->thread_state()->get_tracefunc()) {
+    //     OwnedGreenlet trace_origin;
+    //     trace_origin = origin_greenlet;
+    //     try {
+    //         g_calltrace(tracefunc,
+    //                     args ? mod_globs->event_switch : mod_globs->event_throw,
+    //                     trace_origin,
+    //                     this->_self);
+    //     }
+    //     catch (const PyErrOccurred&) {
+    //         /* Turn trace errors into switch throws */
+    //         args.CLEAR();
+    //     }
+    // }
 
+    
     // We no longer need the origin, it was only here for
     // tracing.
     // We may never actually exit this stack frame so we need
     // to explicitly clear it.
     // This could run Python code and switch.
-    Py_CLEAR(origin_greenlet);
+    // Py_CLEAR(origin_greenlet);
 
     OwnedObject result;
     if (!args) {
