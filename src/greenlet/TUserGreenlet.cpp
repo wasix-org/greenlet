@@ -233,6 +233,7 @@ UserGreenlet::g_initialstub(void* mark)
           This could run arbitrary python code and switch greenlets!
         */
         run = this->self().PyRequireAttr(mod_globs->str_run);
+        this->__run = &run;
         /* restore saved exception */
         saved.PyErrRestore();
 
@@ -285,7 +286,7 @@ UserGreenlet::g_initialstub(void* mark)
 
     /* perform the initial switch */
     switchstack_result_t err = this->g_switchstack();
-    /* returns twice!
+    /* returns twice! (Except for WASIX, that calls slp_start_stack instead)
        The 1st time with ``err == 1``: we are in the new greenlet.
        This one owns a greenlet that used to be current.
        The 2nd time with ``err <= 0``: back in the caller's
@@ -296,7 +297,7 @@ UserGreenlet::g_initialstub(void* mark)
        constructed for the second time until the switch actually happens.
     */
     if (err.status == 1) {
-        // In the new greenlet.
+        // In the new greenlet. (Except for WASIX, that calls slp_start_stack instead)
 
         // This never returns! Calling inner_bootstrap steals
         // the contents of our run object within this stack frame, so
@@ -374,7 +375,68 @@ UserGreenlet::g_initialstub(void* mark)
     return err;
 }
 
+// this = switching_thread_state
+inline void UserGreenlet::slp_start_stack() noexcept {
+    // For WASIX we can't start new stacks in the middle of a function, 
+    // so this function is used as the entrypoint
+    
+    // From g_switchstack():
+    Greenlet* greenlet_that_switched_in = switching_thread_state; // aka this
+    switching_thread_state = nullptr;
+    OwnedGreenlet origin = greenlet_that_switched_in->g_switchstack_success();
+    assert(greenlet_that_switched_in->args() || PyErr_Occurred());
+    // return switchstack_result_t(err, greenlet_that_switched_in, origin);
 
+    // From g_initialstub();
+    try {
+        this->inner_bootstrap(origin.relinquish_ownership(), (this->__run)->relinquish_ownership());
+    }
+    // Getting a C++ exception here isn't good. It's probably a
+    // bug in the underlying greenlet, meaning it's probably a
+    // C++ extension. We're going to abort anyway, but try to
+    // display some nice information *if* possible. Some obscure
+    // platforms don't properly support this (old 32-bit Arm, see see
+    // https://github.com/python-greenlet/greenlet/issues/385); that's not
+    // great, but should usually be OK because, as mentioned above, we're
+    // terminating anyway.
+    //
+    // The catching is tested by
+    // ``test_cpp.CPPTests.test_unhandled_exception_in_greenlet_aborts``.
+    //
+    // PyErrOccurred can theoretically be thrown by
+    // inner_bootstrap() -> g_switch_finish(), but that should
+    // never make it back to here. It is a std::exception and
+    // would be caught if it is.
+    catch (const std::exception& e) {
+        std::string base = "greenlet: Unhandled C++ exception: ";
+        base += e.what();
+        Py_FatalError(base.c_str());
+    }
+    catch (...) {
+        // Some compilers/runtimes use exceptions internally.
+        // It appears that GCC on Linux with libstdc++ throws an
+        // exception internally at process shutdown time to unwind
+        // stacks and clean up resources. Depending on exactly
+        // where we are when the process exits, that could result
+        // in an unknown exception getting here. If we
+        // Py_FatalError() or abort() here, we interfere with
+        // orderly process shutdown. Throwing the exception on up
+        // is the right thing to do.
+        //
+        // gevent's ``examples/dns_mass_resolve.py`` demonstrates this.
+#ifndef NDEBUG
+        fprintf(stderr,
+                "greenlet: inner_bootstrap threw unknown exception; "
+                "is the process terminating?\n");
+#endif
+        throw;
+    }
+    Py_FatalError("greenlet: inner_bootstrap returned with no exception.\n");
+}
+
+
+
+// TODO: Reenable origin_greenlet for tracing.
 void
 UserGreenlet::inner_bootstrap(PyGreenlet* origin_greenlet, PyObject* run)
 {

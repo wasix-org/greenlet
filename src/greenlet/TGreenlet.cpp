@@ -26,7 +26,7 @@ Greenlet::Greenlet(PyGreenlet* p)
 }
 
 Greenlet::Greenlet(PyGreenlet* p, const StackState& initial_stack)
-    :  _self(p), stack_state(initial_stack)
+    :  _self(p), stack_state(initial_stack), _stack_id(-1)
 {
     assert(p->pimpl == nullptr);
     p->pimpl = this;

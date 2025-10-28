@@ -11,6 +11,7 @@
 #include "greenlet_refs.hpp"
 #include "greenlet_cpython_compat.hpp"
 #include "greenlet_allocator.hpp"
+#include <wasix/continuation.h>
 
 using greenlet::refs::OwnedObject;
 using greenlet::refs::OwnedGreenlet;
@@ -356,6 +357,7 @@ namespace greenlet
         PythonState python_state;
         Greenlet(PyGreenlet* p, const StackState& initial_state);
     public:
+        wasix_continuation_id_t _stack_id;
         // This constructor takes ownership of the PyGreenlet, by
         // setting ``p->pimpl = this;``.
         Greenlet(PyGreenlet* p);
@@ -707,6 +709,9 @@ public:
         virtual bool belongs_to_thread(const ThreadState* state) const;
         virtual int tp_traverse(visitproc visit, void* arg);
         virtual int tp_clear();
+        inline void slp_start_stack() noexcept;
+        OwnedObject* __run;
+
         class ParentIsCurrentGuard
         {
         private:

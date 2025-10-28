@@ -3,6 +3,7 @@
 
 #include "greenlet_compiler_compat.hpp"
 #include "greenlet_refs.hpp"
+#include <wasix/continuation.h>
 
 /*
  * the following macros are spliced into the OS/compiler
@@ -45,9 +46,9 @@ static greenlet::Greenlet* volatile switching_thread_state = nullptr;
 
 extern "C" {
 static int GREENLET_NOINLINE(slp_save_state_trampoline)(char* stackref);
+static void GREENLET_NOINLINE(slp_start_stack_trampoline)();
 static void GREENLET_NOINLINE(slp_restore_state_trampoline)();
 }
-
 
 #define SLP_SAVE_STATE(stackref, stsizediff) \
 do {                                                    \
@@ -55,12 +56,26 @@ do {                                                    \
     stackref += STACK_MAGIC;                 \
     if (slp_save_state_trampoline((char*)stackref))    \
         return -1;                                     \
-    if (!switching_thread_state->active()) \
-        return 1;                                      \
+    if (!switching_thread_state->active()) { \
+        stsizediff = 0; \
+        int _ = wasix_continuation_new(&(switching_thread_state->_stack_id), slp_start_stack_trampoline); \
+        break;\
+        /* TODO: Restore the stack we just saved again and return 0*/ \
+        /* return 1; */ \
+    } \
     stsizediff = switching_thread_state->stack_start() - (char*)stackref; \
 } while (0)
 
-#define SLP_RESTORE_STATE() slp_restore_state_trampoline()
+// This now only runs if 
+#define SLP_RESTORE_STATE() \
+do { \
+    assert(switching_thread_state);  \
+    if (switching_thread_state->active()) { \
+        slp_restore_state_trampoline(); \
+    } \
+} while (0)
+
+
 
 #define SLP_EVAL
 extern "C" {
