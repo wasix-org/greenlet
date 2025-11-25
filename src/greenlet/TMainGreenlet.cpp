@@ -13,6 +13,7 @@
 #define T_MAIN_GREENLET_CPP
 
 #include "TGreenlet.hpp"
+#include "wasix/context.h"
 
 #ifdef Py_GIL_DISABLED
 #include <atomic>
@@ -48,7 +49,8 @@ MainGreenlet::MainGreenlet(PyGreenlet* p, ThreadState* state)
       _self(p),
       _thread_state(state)
 {
-    this->_stack_id = 0; // Main continuation uses stack id 0
+    // TODO: Only relevant for wasix. Guard this with #ifdef?
+    this->_context_id = wasix_context_main;
     G_TOTAL_MAIN_GREENLETS++;
 }
 

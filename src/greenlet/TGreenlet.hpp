@@ -11,7 +11,7 @@
 #include "greenlet_refs.hpp"
 #include "greenlet_cpython_compat.hpp"
 #include "greenlet_allocator.hpp"
-#include <wasix/continuation.h>
+#include <wasix/context.h>
 
 using greenlet::refs::OwnedObject;
 using greenlet::refs::OwnedGreenlet;
@@ -357,7 +357,7 @@ namespace greenlet
         PythonState python_state;
         Greenlet(PyGreenlet* p, const StackState& initial_state);
     public:
-        wasix_continuation_id_t _stack_id;
+        wasix_context_id_t _context_id;
         // This constructor takes ownership of the PyGreenlet, by
         // setting ``p->pimpl = this;``.
         Greenlet(PyGreenlet* p);

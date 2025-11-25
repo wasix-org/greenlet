@@ -3,7 +3,7 @@
 
 #include "greenlet_compiler_compat.hpp"
 #include "greenlet_refs.hpp"
-#include <wasix/continuation.h>
+#include <wasix/context.h>
 
 /*
  * the following macros are spliced into the OS/compiler
@@ -58,7 +58,7 @@ do {                                                    \
         return -1;                                     \
     if (!switching_thread_state->active()) { \
         stsizediff = 0; \
-        int _ = wasix_continuation_new(&(switching_thread_state->_stack_id), slp_start_stack_trampoline); \
+        int _ = wasix_context_create(&(switching_thread_state->_context_id), slp_start_stack_trampoline); \
         break;\
         /* TODO: Restore the stack we just saved again and return 0*/ \
         /* return 1; */ \

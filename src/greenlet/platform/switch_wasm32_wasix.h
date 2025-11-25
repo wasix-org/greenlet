@@ -1,8 +1,8 @@
 /**
- * this is the internal transfer function for WASIX continuations
+ * this is the internal transfer function for WASIX contexts
  * 
  * As we cannot really manipulate the call stack/program counter in WASM,
- * we need to use helper functions provided by the WASIX continuations API.
+ * we need to use helper functions provided by the WASIX context switching API.
  */
 #define STACK_REFPLUS 1
 
@@ -10,11 +10,11 @@
 
 #define STACK_MAGIC 0
 
-#define WASIX_STACK_SWITCH()                                          \
+#define WASIX_CONTEXT_SWITCH()                                          \
     do {                                                              \
         assert(switching_thread_state);                               \
-        assert(switching_thread_state->_stack_id);                    \
-        wasix_continuation_switch(switching_thread_state->_stack_id); \
+        assert(switching_thread_state->_context_id);                    \
+        wasix_context_switch(switching_thread_state->_context_id); \
     } while (0)
 
 static int
@@ -45,7 +45,7 @@ slp_switch(void)
 
     // We now have the C stack pointer pointing to the correct C stack
     // Now we can switch the WASM callstack
-    WASIX_STACK_SWITCH();
+    WASIX_CONTEXT_SWITCH();
 
     __asm__ volatile(
         "i32.const 0\n"
