@@ -10,11 +10,11 @@
 
 #define STACK_MAGIC 0
 
-#define WASIX_CONTEXT_SWITCH()                                          \
-    do {                                                              \
-        assert(switching_thread_state);                               \
-        assert(switching_thread_state->_context_id);                    \
-        wasix_context_switch(switching_thread_state->_context_id); \
+#define WASIX_CONTEXT_SWITCH() \
+    do { \
+        assert(switching_thread_state); \
+        assert(switching_thread_state->_context_id); \
+        int _ = wasix_context_switch(switching_thread_state->_context_id); \
     } while (0)
 
 static int

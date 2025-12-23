@@ -47,6 +47,10 @@ UserGreenlet::~UserGreenlet()
     // TestLeaks.test_untracked_memory_doesnt_increase_unfinished_thread_dealloc_in_main fails.
     this->python_state.did_finish(nullptr);
     this->tp_clear();
+    if (this->_context_id != -1 && this->_context_id != wasix_context_main) {
+        int _ = wasix_context_destroy(this->_context_id);
+        this->_context_id = -1;
+    }
 }
 
 
